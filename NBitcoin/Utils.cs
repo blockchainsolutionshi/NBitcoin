@@ -10,6 +10,7 @@ using NBitcoin.Protocol;
 using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 using NBitcoin.BouncyCastle.Math;
+using System.Runtime.InteropServices;
 #if !NOSOCKET
 using System.Net.Sockets;
 #endif
@@ -23,6 +24,35 @@ namespace NBitcoin
 {
 	public static class Extensions
 	{
+#if HAS_SPAN
+		internal static Crypto.ECDSASignature Sign(this Secp256k1.ECPrivKey key, uint256 h, bool enforceLowR)
+		{
+			return new Crypto.ECDSASignature(key.Sign(h, enforceLowR, out _));
+		}
+		internal static Secp256k1.SecpECDSASignature Sign(this Secp256k1.ECPrivKey key, uint256 h, bool enforceLowR, out int recid)
+		{
+			Span<byte> hash = stackalloc byte[32];
+			h.ToBytes(hash);
+			byte[] extra_entropy = null;
+			Secp256k1.RFC6979NonceFunction nonceFunction = null;
+			Span<byte> vchSig = stackalloc byte[Secp256k1.SecpECDSASignature.MaxLength];
+			Secp256k1.SecpECDSASignature sig;
+			uint counter = 0;
+			bool ret = key.TrySignECDSA(hash, null, out recid, out sig);
+			// Grind for low R
+			while (ret && sig.r.IsHigh && enforceLowR)
+			{
+				if (extra_entropy == null || nonceFunction == null)
+				{
+					extra_entropy = new byte[32];
+					nonceFunction = new Secp256k1.RFC6979NonceFunction(extra_entropy);
+				}
+				Utils.ToBytes(++counter, true, extra_entropy.AsSpan());
+				ret = key.TrySignECDSA(hash, nonceFunction, out recid, out sig);
+			}
+			return sig;
+		}
+#endif
 		/// <summary>
 		/// Deriving an HDKey is normally time consuming, this wrap the IHDKey in a new HD object which can cache derivations
 		/// </summary>
@@ -709,20 +739,24 @@ namespace NBitcoin
 				arr[fromIndex] = to;
 			}
 		}
-		public static void Shuffle<T>(List<T> arr, Random rand)
+		public static void Shuffle<T>(List<T> arr, int start, Random rand)
 		{
 			rand = rand ?? new Random();
-			for (int i = 0; i < arr.Count; i++)
+			for (int i = start; i < arr.Count; i++)
 			{
-				var fromIndex = rand.Next(arr.Count);
+				var fromIndex = rand.Next(start, arr.Count - start);
 				var from = arr[fromIndex];
 
-				var toIndex = rand.Next(arr.Count);
+				var toIndex = rand.Next(start, arr.Count - start);
 				var to = arr[toIndex];
 
 				arr[toIndex] = from;
 				arr[fromIndex] = to;
 			}
+		}
+		public static void Shuffle<T>(List<T> arr, Random rand)
+		{
+			Shuffle(arr, 0, rand);
 		}
 		public static void Shuffle<T>(T[] arr, int seed)
 		{
@@ -764,6 +798,14 @@ namespace NBitcoin
 #endif
 		public static byte[] ToBytes(uint value, bool littleEndian)
 		{
+#if HAS_SPAN
+			if (littleEndian && BitConverter.IsLittleEndian)
+			{
+				var result = new byte[4];
+				MemoryMarshal.Cast<byte, uint>(result)[0] = value;
+				return result;
+			}
+#endif
 			if (littleEndian)
 			{
 				return new byte[]
@@ -786,10 +828,56 @@ namespace NBitcoin
 			}
 		}
 
+		public static byte[] ToBytes(ulong value, bool littleEndian)
+		{
+#if HAS_SPAN
+			if (littleEndian && BitConverter.IsLittleEndian)
+			{
+				var result = new byte[8];
+				MemoryMarshal.Cast<byte, ulong>(result)[0] = value;
+				return result;
+			}
+#endif
+			if (littleEndian)
+			{
+				return new byte[]
+				{
+					(byte)value,
+					(byte)(value >> 8),
+					(byte)(value >> 16),
+					(byte)(value >> 24),
+					(byte)(value >> 32),
+					(byte)(value >> 40),
+					(byte)(value >> 48),
+					(byte)(value >> 56),
+				};
+			}
+			else
+			{
+				return new byte[]
+				{
+					(byte)(value >> 56),
+					(byte)(value >> 48),
+					(byte)(value >> 40),
+					(byte)(value >> 32),
+					(byte)(value >> 24),
+					(byte)(value >> 16),
+					(byte)(value >> 8),
+					(byte)value,
+				};
+			}
+		}
+
 #if HAS_SPAN
 		public static void ToBytes(uint value, bool littleEndian, Span<byte> output)
 		{
-			if(littleEndian)
+			if (littleEndian && BitConverter.IsLittleEndian)
+			{
+				MemoryMarshal.Cast<byte, uint>(output)[0] = value;
+				return;
+			}
+
+			if (littleEndian)
 			{
 				output[0] = (byte)value;
 				output[1] = (byte)(value >> 8);
@@ -804,42 +892,46 @@ namespace NBitcoin
 				output[3] = (byte)value;
 			}
 		}
-#endif
-
-		public static byte[] ToBytes(ulong value, bool littleEndian)
+		public static void ToBytes(ulong value, bool littleEndian, Span<byte> output)
 		{
+			if (littleEndian && BitConverter.IsLittleEndian)
+			{
+				MemoryMarshal.Cast<byte, ulong>(output)[0] = value;
+				return;
+			}
+
 			if (littleEndian)
 			{
-				return new byte[]
-				{
-					(byte)value,
-					(byte)(value >> 8),
-					(byte)(value >> 16),
-					(byte)(value >> 24),
-					(byte)(value >> 32),
-					(byte)(value >> 40),
-					(byte)(value >> 48),
-					(byte)(value >> 56),
-				};
+				output[0] = (byte)value;
+				output[1] = (byte)(value >> 8);
+				output[2] = (byte)(value >> 16);
+				output[3] = (byte)(value >> 24);
+				output[4] = (byte)(value >> 32);
+				output[5] = (byte)(value >> 40);
+				output[6] = (byte)(value >> 48);
+				output[7] = (byte)(value >> 56);
 			}
 			else
 			{
-				return new byte[]
-				{
-					(byte)(value >> 56),
-					(byte)(value >> 48),
-					(byte)(value >> 40),
-					(byte)(value >> 32),
-					(byte)(value >> 24),
-					(byte)(value >> 16),
-					(byte)(value >> 8),
-					(byte)value,
-				};
+				output[0] = (byte)(value >> 56);
+				output[1] = (byte)(value >> 48);
+				output[2] = (byte)(value >> 32);
+				output[3] = (byte)(value >> 24);
+				output[4] = (byte)(value >> 16);
+				output[5] = (byte)(value >> 8);
+				output[6] = (byte)value;
 			}
 		}
+#endif
 
 		public static uint ToUInt32(byte[] value, int index, bool littleEndian)
 		{
+#if HAS_SPAN
+			if (littleEndian && BitConverter.IsLittleEndian)
+			{
+				return MemoryMarshal.Cast<byte, uint>(value.AsSpan().Slice(index))[0];
+			}
+#endif
 			if (littleEndian)
 			{
 				return value[index]
@@ -858,7 +950,11 @@ namespace NBitcoin
 #if HAS_SPAN
 		public static uint ToUInt32(ReadOnlySpan<byte> value, bool littleEndian)
 		{
-			if(littleEndian)
+			if (littleEndian && BitConverter.IsLittleEndian)
+			{
+				return MemoryMarshal.Cast<byte, uint>(value)[0];
+			}
+			if (littleEndian)
 			{
 				return value[0]
 					   + ((uint)value[1] << 8)
@@ -885,8 +981,45 @@ namespace NBitcoin
 		{
 			return ToUInt32(value, 0, littleEndian);
 		}
-		public static ulong ToUInt64(byte[] value, bool littleEndian)
+
+		public static ulong ToUInt64(byte[] value, int offset, bool littleEndian)
 		{
+#if HAS_SPAN
+			if (littleEndian && BitConverter.IsLittleEndian)
+			{
+				return MemoryMarshal.Cast<byte, ulong>(value.AsSpan().Slice(offset))[0];
+			}
+#endif
+			if (littleEndian)
+			{
+				return value[offset + 0]
+					   + ((ulong)value[offset + 1] << 8)
+					   + ((ulong)value[offset + 2] << 16)
+					   + ((ulong)value[offset + 3] << 24)
+					   + ((ulong)value[offset + 4] << 32)
+					   + ((ulong)value[offset + 5] << 40)
+					   + ((ulong)value[offset + 6] << 48)
+					   + ((ulong)value[offset + 7] << 56);
+			}
+			else
+			{
+				return value[offset + 7]
+					+ ((ulong)value[offset + 6] << 8)
+					+ ((ulong)value[offset + 5] << 16)
+					+ ((ulong)value[offset + 4] << 24)
+					+ ((ulong)value[offset + 3] << 32)
+					   + ((ulong)value[offset + 2] << 40)
+					   + ((ulong)value[offset + 1] << 48)
+					   + ((ulong)value[offset + 0] << 56);
+			}
+		}
+#if HAS_SPAN
+		public static ulong ToUInt64(ReadOnlySpan<byte> value, bool littleEndian)
+		{
+			if (littleEndian && BitConverter.IsLittleEndian)
+			{
+				return MemoryMarshal.Cast<byte, ulong>(value)[0];
+			}
 			if (littleEndian)
 			{
 				return value[0]
@@ -909,6 +1042,12 @@ namespace NBitcoin
 					   + ((ulong)value[1] << 48)
 					   + ((ulong)value[0] << 56);
 			}
+		}
+#endif
+
+		public static ulong ToUInt64(byte[] value, bool littleEndian)
+		{
+			return ToUInt64(value, 0, littleEndian);
 		}
 
 

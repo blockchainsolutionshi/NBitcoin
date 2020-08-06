@@ -9,25 +9,45 @@ namespace NBitcoin.Altcoins.Elements
 	{
 		protected static readonly ulong[] Generator = { 0x7d52fba40bd886, 0x5e8dbf1a03950c, 0x1c3a3c74072a18, 0x385d72fa0e5139, 0x7093e5a608865b };
 
+#if HAS_SPAN
+		private static ulong Polymod(ReadOnlySpan<byte> values)
+#else
 		private static ulong Polymod(byte[] values)
+#endif
 		{
 			ulong chk = 1;
-			foreach (var value in values)
+			for (int ii = 0; ii < values.Length; ii++)
 			{
+				var value = values[ii];
 				var top = chk >> 55;
 				chk = value ^ ((chk & 0x7fffffffffffff) <<
 				               5);
-				foreach (var i in Enumerable.Range(0, 5))
-				{
-					chk ^= ((top >> i) & 1) == 1 ? Generator[i] : 0;
-				}
+				chk ^= ((top >> 0) & 1) == 1 ? Generator[0] : 0;
+				chk ^= ((top >> 1) & 1) == 1 ? Generator[1] : 0;
+				chk ^= ((top >> 2) & 1) == 1 ? Generator[2] : 0;
+				chk ^= ((top >> 3) & 1) == 1 ? Generator[3] : 0;
+				chk ^= ((top >> 4) & 1) == 1 ? Generator[4] : 0;
 			}
 			return chk;
 		}
 
+#if HAS_SPAN
 		protected override bool VerifyChecksum(byte[] data, int bechStringLen, out int[] errorPosition)
 		{
+			return VerifyChecksum(data.AsSpan(), bechStringLen, out errorPosition);
+		}
+		protected override bool VerifyChecksum(ReadOnlySpan<byte> data, int bechStringLen, out int[] errorPosition)
+#else
+		protected override bool VerifyChecksum(byte[] data, int bechStringLen, out int[] errorPosition)
+#endif
+		{
+#if HAS_SPAN
+			Span<byte> values = _HrpExpand.Length + data.Length is int v && v > 256 ? new byte[v] : stackalloc byte[v];
+			_HrpExpand.CopyTo(values);
+			data.CopyTo(values.Slice(_HrpExpand.Length));
+#else
 			var values = _HrpExpand.Concat(data);
+#endif
 			errorPosition = new int[0];
 			return Polymod(values) == 1;
 		}
@@ -115,7 +135,11 @@ namespace NBitcoin.Altcoins.Elements
 			{
 				throw new FormatException("Mismatching human readable part");
 			}
+#if HAS_SPAN
+			Span<byte> data = encoded.Length - pos - 1 is int l && l > 256 ? new byte[l] : stackalloc byte[l];
+#else
 			var data = new byte[encoded.Length - pos - 1];
+#endif
 			for (int j = 0, i = pos + 1; i < encoded.Length; i++, j++)
 			{
 				data[j] = (byte)Array.IndexOf(Byteset, buffer[i]);
@@ -125,7 +149,11 @@ namespace NBitcoin.Altcoins.Elements
 			{
 				throw new FormatException("Error while verifying Blech32 checksum");
 			}
+#if HAS_SPAN
+			return data.Slice(0, data.Length - 12).ToArray();
+#else
 			return data.Take(data.Length - 12).ToArray();
+#endif
 		}
 
 		protected override byte[] ConvertBits(IEnumerable<byte> data, int fromBits, int toBits, bool pad = true)

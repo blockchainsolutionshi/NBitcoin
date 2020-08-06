@@ -10,7 +10,7 @@ using System.Linq;
 namespace NBitcoin
 {
 #nullable enable
-	public class OutPoint : IBitcoinSerializable
+	public class OutPoint : IBitcoinSerializable, IEquatable<OutPoint>
 	{
 		public bool IsNull
 		{
@@ -180,12 +180,15 @@ namespace NBitcoin
 		{
 			return !(a == b);
 		}
+
 		public override bool Equals(object? obj)
 		{
-			var item = obj as OutPoint;
-			if (object.ReferenceEquals(null, item))
-				return false;
-			return item == this;
+			return Equals(obj as OutPoint);
+		}
+
+		public bool Equals(OutPoint? other)
+		{
+			return other == this;
 		}
 
 		public override int GetHashCode()
@@ -644,8 +647,16 @@ namespace NBitcoin
 		{
 			if (minRelayTxFee == null)
 				throw new ArgumentNullException("minRelayTxFee");
-			int nSize = this.GetSerializedSize() + 148;
-			return 3 * minRelayTxFee.GetFee(nSize);
+
+			// OutPoint (32 + 4) + script_size (1) + sequence (4)
+			int inputSize = 32 + 4 + 1 + 4;
+			inputSize += ScriptPubKey.IsScriptType(ScriptType.Witness)
+				? 107 / Transaction.WITNESS_SCALE_FACTOR
+				: 107;
+
+			int outputSize = this.GetSerializedSize();
+
+			return 3 * minRelayTxFee.GetFee(inputSize + outputSize);
 		}
 
 		#region IBitcoinSerializable Members
@@ -1055,7 +1066,7 @@ namespace NBitcoin
 			foreach (var op in scriptSig.ToOps())
 			{
 				if (op.PushData == null)
-					throw new ArgumentException("A WitScript can only contains push operations", "script");
+					throw new ArgumentException("A WitScript can only contain push operations", "script");
 				pushes.Add(op.PushData);
 			}
 			_Pushes = pushes.ToArray();

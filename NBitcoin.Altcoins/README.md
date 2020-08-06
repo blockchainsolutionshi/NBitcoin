@@ -2,18 +2,22 @@
 
 Currently supported altcoins are:
 
+* Argoneum
 * BCash
 * BGold
 * BitCore
 * Dash
 * Dogecoin
+* Verge
 * Dystem
 * Feathercoin
 * Groestlcoin
 * Liquid
 * Litecoin
 * Monacoin
+* MonetaryUnit
 * Polis
+* Terracoin
 * UFO
 * Viacoin
 * Zclassic
@@ -22,6 +26,7 @@ Currently supported altcoins are:
 * Chaincoin
 * ZCoin
 * DogeCash
+* Qtum
 
 ## How to use?
 

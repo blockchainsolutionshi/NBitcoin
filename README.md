@@ -159,6 +159,7 @@ NBitcoin notably includes:
 * Hierarchical Deterministic Wallets ([BIP 32](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki))
 * Payment URLs ([BIP 21](https://github.com/bitcoin/bips/blob/master/bip-0021.mediawiki))
 * Full Bitcoin P2P implementation with SOCKS5 support for connecting through Tor
+* [A C# implementation of secp256k1](NBitcoin.Secp256k1/README.md)
 
 Please read our [ebook](https://programmingblockchain.gitbooks.io/programmingblockchain/content/) to understand the capabilities.
 
@@ -208,7 +209,7 @@ node.VersionHandshake();
 
 * [BreezeProject](http://github.com/BreezeHub/BreezeProject): Breeze Masternode and Wallet with Breeze Privacy Protocol 
 
-* [Geewallet](https://github.com/diginex/geewallet): a minimalistic and pragmatist lightweight wallet for people that want to hold the most important cryptocurrencies in the same application without hassle
+* [geewallet](https://gitlab.com/nblockchain/geewallet/): Non-custodial, minimalistic & pragmatist opensource crossplatform lightweight brainwallet to hold the most important cryptoassets in the same application with ease & peace of mind
 
 ## Useful doc :
 

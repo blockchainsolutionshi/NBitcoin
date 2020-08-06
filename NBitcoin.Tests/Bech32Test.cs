@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text;
 using NBitcoin.DataEncoders;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace NBitcoin.Tests
 {
@@ -70,18 +71,9 @@ namespace NBitcoin.Tests
 			Assert.Equal(2, ex.ErrorIndexes.Length);
 			Assert.Equal(8, ex.ErrorIndexes[0]);
 			Assert.Equal(12, ex.ErrorIndexes[1]);
-		}
 
-		[Fact]
-		public void ValidateValidChecksum()
-		{
-			foreach (var test in VALID_CHECKSUM)
-			{
-				var bech = Bech32Encoder.ExtractEncoderFromString(test);
-				var pos = test.LastIndexOf('1');
-				var test2 = test.Substring(0, pos + 1) + ((test[pos + 1]) ^ 1) + test.Substring(pos + 2);
-				Assert.Throws<FormatException>(() => bech.Decode(test2, out var wit));
-			}
+			var bech2 = Encoders.Bech32("tb");
+			Assert.Throws<FormatException>(() => bech2.Decode("tb1qdtpzu24mlyz3k0vrqxyntq0xqdqva7zxm7r485tb1qdtpzu24mlyz3k0vrqxyntq0xqdqva7zxm7r485", out wit));
 		}
 
 		[Fact]
@@ -104,6 +96,7 @@ namespace NBitcoin.Tests
 
 		Bech32Encoder bech32 = Encoders.Bech32("bc");
 		Bech32Encoder tbech32 = Encoders.Bech32("tb");
+
 		[Fact]
 		public void ValidAddress()
 		{
