@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using NBitcoin.JsonConverters;
 using NBitcoin.RPC;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace NBitcoin.Altcoins.Elements
@@ -15,7 +17,10 @@ namespace NBitcoin.Altcoins.Elements
 			getnewaddress,
 			getaddressinfo,
 			getbalance,
-			unblindrawtransaction
+			unblindrawtransaction,
+			issueasset,
+			sendtoaddress,
+			createrawtransaction
 		}
 		public static Task<RPCResponse> SendCommandAsync(this RPCClient rpcClient, ElementsRPCOperations commandName,
 			params object[] parameters)
@@ -30,6 +35,14 @@ namespace NBitcoin.Altcoins.Elements
 			result.ThrowIfError();
 
 			return ParseTxHex(result.Result["hex"].Value<string>(), network ?? Liquid.Instance.Mainnet);
+		}
+
+		public static async Task<ElementsTransaction> CreateRawTransaction(this RPCClient rpcClient, string[] inputs, string[] outputs, Network network, uint locktime = 0, bool replaceable = true, string output_assets = "")
+		{
+			var result = await rpcClient.SendCommandAsync(ElementsRPCOperations.createrawtransaction, inputs, outputs);
+			result.ThrowIfError();
+
+			return ParseTxHex(result.Result["hex"].Value<string>(), network ?? Makana.Instance.Mainnet);
 		}
 
 		private static ElementsTransaction ParseTxHex(string hex,  Network network)
@@ -66,6 +79,46 @@ namespace NBitcoin.Altcoins.Elements
 			return await rpcClient.UnblindRawTransaction(transaction.ToHex(), network);
 		}
 
+		public static async Task<IssueAssetResponse> IssueAsset(this RPCClient rpcClient, Money assetAmount, Money tokenAmount, bool blind = true)
+		{
+			var result = await rpcClient.SendCommandAsync(ElementsRPCOperations.issueasset, assetAmount.ToDecimal(MoneyUnit.BTC), tokenAmount.ToDecimal(MoneyUnit.BTC), blind).ConfigureAwait(false);
+			result.ThrowIfError();
+			return IssueAssetResponse.FromJsonResponse((JObject)result.Result, rpcClient.Network);
+		}
+
+		public static async Task<uint256> SendToAddressAsync(
+				this RPCClient rpcClient,
+				BitcoinAddress address,
+				Money amount,
+				string commentTx = null,
+				string commentDest = null,
+				bool subtractFeeFromAmount = false,
+				bool replaceable = false,
+				uint256 assetId = null
+			)
+		{
+			if (assetId == null)
+			{
+				return await rpcClient.SendToAddressAsync(address, amount, commentTx, commentDest, subtractFeeFromAmount, replaceable);
+			}
+			if (address == null)
+				throw new ArgumentNullException(nameof(address));
+			if (amount == null)
+				throw new ArgumentNullException(nameof(amount));
+			List<object> parameters = new List<object>();
+			parameters.Add(address.ToString());
+			parameters.Add(amount.ToDecimal(MoneyUnit.BTC));
+			parameters.Add($"{commentTx}");
+			parameters.Add($"{commentDest}");
+			parameters.Add(subtractFeeFromAmount);
+			parameters.Add(replaceable);
+			parameters.Add(1);
+			parameters.Add("UNSET");
+			parameters.Add(assetId.ToString());
+			var resp = await rpcClient.SendCommandAsync(ElementsRPCOperations.sendtoaddress, parameters.ToArray()).ConfigureAwait(false);
+			return uint256.Parse(resp.Result.ToString());
+		}
+
 		public static async Task<BitcoinAddress> GetNewAddressAsync(this RPCClient rpcClient, Network network)
 		{
 			var result = await rpcClient.SendCommandAsync(ElementsRPCOperations.getnewaddress).ConfigureAwait(false);
@@ -87,6 +140,35 @@ namespace NBitcoin.Altcoins.Elements
 				token => Money.Parse(((JProperty) token).Value.ToString()));
 		}
 
+
+	}
+
+	public class IssueAssetResponse
+	{
+		public uint256 TransactionId { get; set; }
+
+		public int Vin { get; set; }
+
+		[JsonProperty("entropy")]
+		public string Entropy { get; set; }
+
+		[JsonProperty("asset")]
+		public uint256 Asset { get; set; }
+
+		[JsonProperty("token")]
+		public uint256 Token { get; set; }
+
+		public static IssueAssetResponse FromJsonResponse(JObject raw, Network network)
+		{
+			return new IssueAssetResponse()
+			{
+				TransactionId = uint256.Parse(raw.Property("txid").Value.ToString()),
+				Asset = uint256.Parse(raw.Property("asset").Value.ToString()),
+				Token = uint256.Parse(raw.Property("token").Value.ToString()),
+				Entropy = raw.Property("entropy").ToString(),
+				Vin = raw.Property("vin").Value.Value<int>(),
+			};
+		}
 
 	}
 

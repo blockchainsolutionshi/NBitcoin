@@ -470,7 +470,11 @@ namespace NBitcoin.Altcoins.Elements
 			}
 		}
 
-		public ConfidentialAsset Asset => GetAssetCore();
+		public ConfidentialAsset Asset
+		{
+			get => GetAssetCore();
+			set => SetAssetCore(value);
+		}
 
 		protected ConfidentialValue _ConfidentialValue = new ConfidentialValue();
 		public ConfidentialValue ConfidentialValue
@@ -501,6 +505,8 @@ namespace NBitcoin.Altcoins.Elements
 		}
 
 		protected abstract ConfidentialAsset GetAssetCore();
+
+		protected abstract void SetAssetCore(ConfidentialAsset asset);
 
 		public byte[] SurjectionProof
 		{
@@ -591,6 +597,11 @@ namespace NBitcoin.Altcoins.Elements
 		{
 			return Asset;
 		}
+
+		protected override void SetAssetCore(ConfidentialAsset asset)
+		{
+			_Asset = asset as ConfidentialAsset<TNetwork>;
+		}
 	}
 #pragma warning disable CS0618 // Type or member is obsolete
 
@@ -601,8 +612,37 @@ namespace NBitcoin.Altcoins.Elements
 			return ElementsConsensusFactory<TNetwork>.Instance;
 		}
 	}
+
+	public class ElementsTxOutList : TxOutList
+	{
+		public ElementsTxOutList()
+		{
+		}
+
+		public ElementsTxOutList(ElementsTransaction transaction) : base(transaction)
+		{
+		}
+
+		public override System.Collections.Generic.IEnumerable<ICoin> AsICoins()
+		{
+			return base.AsICoins().Where(coin =>
+					coin.TxOut is ElementsTxOut elementsTxOut && elementsTxOut.Asset != null &&
+					elementsTxOut.Value != null)
+				.Select(coin =>
+					new AssetCoin(new AssetMoney((coin.TxOut as ElementsTxOut)?.Asset.AssetId, coin.TxOut.Value.Satoshi),
+						coin));
+		}
+	}
+
 	public abstract class ElementsTransaction : Transaction
 	{
+
+		public ElementsTransaction()
+		{
+			vin = new TxInList(this);
+			vout = new ElementsTxOutList(this);
+		}
+
 		public Money Fee
 		{
 			get
